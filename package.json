@@ -11,6 +11,10 @@
     "session"
   ],
   "license": "MIT",
+  "author": "zc09v <zhaochen_009@126.com>",
+  "files": [
+    "extensions"
+  ],
   "peerDependencies": {
     "@earendil-works/pi-coding-agent": "*",
     "typebox": "*"
