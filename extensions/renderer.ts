@@ -40,7 +40,7 @@ const RENDERER_JS = `
   var collapseBtn = document.getElementById("collapse");
 
   var ROW_HEIGHT = 22;
-  var MIN_BAR_PX = 1.2;
+  var MIN_BAR_PX = 4;
   var MIN_WIDTH_PX = 900;
   var IDLE_GAP_PX = 12;
   var collapseIdle = true;
