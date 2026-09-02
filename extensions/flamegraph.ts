@@ -395,19 +395,10 @@ export default function flameGraphExtension(pi: ExtensionAPI) {
     if (turnSpan) {
       const meta: Record<string, unknown> = { ...(turnSpan.meta ?? {}) };
       meta.toolCalls = event.toolResults.length;
-      const messageContent = (event.message as { content?: unknown } | undefined)?.content;
-      const messageText = textOf(messageContent);
-      const chars = textChars(messageContent);
+      const chars = textChars((event.message as { content?: unknown } | undefined)?.content);
       if (chars !== undefined) meta.textChars = chars;
       const toolNames = Array.from(new Set(event.toolResults.map((t) => t.toolName)));
-      let summary = "";
-      if (toolNames.length > 0) {
-        summary = `tools: ${toolNames.join(", ")}`;
-        meta.tools = toolNames;
-      } else if (messageText) {
-        summary = `"${previewText(messageText, 50)}"`;
-      }
-      if (summary) turnSpan.name = `turn ${turnCount} · ${summary}`;
+      if (toolNames.length > 0) meta.tools = toolNames;
       turnSpan.meta = meta;
       closeSpan(turnSpan);
       turnSpan = null;
