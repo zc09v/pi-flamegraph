@@ -1,0 +1,23 @@
+{
+  "name": "pi-flamegraph",
+  "version": "1.0.0",
+  "description": "Record a pi session life cycle and render an interactive flame graph to a self-contained HTML file for performance analysis.",
+  "keywords": [
+    "pi-package",
+    "pi-extension",
+    "flamegraph",
+    "profiling",
+    "performance",
+    "session"
+  ],
+  "license": "MIT",
+  "peerDependencies": {
+    "@earendil-works/pi-coding-agent": "*",
+    "typebox": "*"
+  },
+  "pi": {
+    "extensions": [
+      "./extensions/flamegraph.ts"
+    ]
+  }
+}

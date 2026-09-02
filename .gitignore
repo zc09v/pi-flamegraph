@@ -1,0 +1,6 @@
+node_modules/
+*.log
+.DS_Store
+
+# generated flame graph output (default: ./flamegraph.html)
+flamegraph.html
