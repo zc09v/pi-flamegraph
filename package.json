@@ -15,6 +15,10 @@
   "files": [
     "extensions"
   ],
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/zc09v/pi-flamegraph.git"
+  },
   "peerDependencies": {
     "@earendil-works/pi-coding-agent": "*",
     "typebox": "*"
@@ -22,6 +26,7 @@
   "pi": {
     "extensions": [
       "./extensions/flamegraph.ts"
-    ]
+    ],
+    "image": "https://raw.githubusercontent.com/zc09v/pi-flamegraph/main/screenshot/screenshot.png"
   }
 }
