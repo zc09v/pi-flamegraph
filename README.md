@@ -76,3 +76,28 @@ extensions/renderer.ts     # self-contained HTML renderer (no external deps)
 extensions/types.ts        # shared span/data types
 scripts/validate.js        # pre-publish checks (manifest + renderer JS integrity)
 ```
+
+## Releasing
+
+Pre-publish checks run automatically on `npm publish` (via `prepublishOnly`),
+and can also be run manually:
+
+```bash
+npm run check
+```
+
+To ship a new version:
+
+```bash
+# 1. commit your changes
+git add -A && git commit -m "feat: ..."
+
+# 2. bump the version (patch/minor/major) — creates the git tag + commit
+npm version patch
+
+# 3. push code and the new tag
+git push && git push --tags
+
+# 4. publish (re-runs the checks, then uploads; use your 2FA code)
+npm publish --otp=XXXXXX
+```
