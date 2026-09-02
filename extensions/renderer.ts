@@ -37,10 +37,13 @@ const RENDERER_JS = `
   var statsEl = document.getElementById("stats");
   var legendEl = document.getElementById("legend");
   var resetBtn = document.getElementById("reset");
+  var collapseBtn = document.getElementById("collapse");
 
   var ROW_HEIGHT = 22;
   var MIN_BAR_PX = 1.2;
   var MIN_WIDTH_PX = 900;
+  var IDLE_GAP_PX = 12;
+  var collapseIdle = true;
 
   var CATEGORY_COLORS = {
     session: "#7d8bb0",
@@ -267,8 +270,12 @@ const RENDERER_JS = `
     tooltip.style.display = "none";
   }
 
-  function updateStats(items, maxRow, matches, viewDur) {
-    var text = items.length + " spans · view " + fmtMs(viewDur) + " · max depth " + (maxRow + 1);
+  function updateStats(items, maxRow, matches, viewDur, idleMs) {
+    var text = items.length + " spans · view " + fmtMs(viewDur);
+    if (typeof idleMs === "number" && idleMs > 0) {
+      text += " · active " + fmtMs(Math.max(viewDur - idleMs, 0)) + " · idle " + fmtMs(idleMs) + " (collapsed)";
+    }
+    text += " · max depth " + (maxRow + 1);
     if (matches) text += " · " + matches.length + " match" + (matches.length === 1 ? "" : "es");
     statsEl.textContent = text;
   }
@@ -288,12 +295,74 @@ const RENDERER_JS = `
     }
   }
 
+  function blockFor(t, blocks) {
+    for (var i = 0; i < blocks.length; i++) {
+      if (t < blocks[i].end) return blocks[i];
+    }
+    return blocks.length ? blocks[blocks.length - 1] : null;
+  }
+
+  function buildCollapsedLayout(activity, viewStart, viewEnd, wrapWidth) {
+    var intervals = [];
+    for (var i = 0; i < activity.length; i++) {
+      intervals.push([activity[i].node.start, activity[i].node.end]);
+    }
+    intervals.sort(function (a, b) { return a[0] - b[0]; });
+
+    var blocks = [];
+    for (var j = 0; j < intervals.length; j++) {
+      var s = intervals[j][0];
+      var e = intervals[j][1];
+      if (blocks.length && s <= blocks[blocks.length - 1][1]) {
+        if (e > blocks[blocks.length - 1][1]) blocks[blocks.length - 1][1] = e;
+      } else {
+        blocks.push([s, e]);
+      }
+    }
+
+    var segs = [];
+    var cursor = viewStart;
+    for (var b = 0; b < blocks.length; b++) {
+      if (blocks[b][0] > cursor) segs.push({ idle: true, start: cursor, end: blocks[b][0] });
+      segs.push({ idle: false, start: blocks[b][0], end: blocks[b][1] });
+      cursor = blocks[b][1];
+    }
+    if (cursor < viewEnd) segs.push({ idle: true, start: cursor, end: viewEnd });
+
+    var totalAct = 0;
+    var numIdle = 0;
+    for (var k = 0; k < segs.length; k++) {
+      if (segs[k].idle) numIdle++;
+      else totalAct += segs[k].end - segs[k].start;
+    }
+
+    var scale = totalAct > 0 ? Math.max(wrapWidth - numIdle * IDLE_GAP_PX, 120) / totalAct : 0;
+
+    var x = 0;
+    var outBlocks = [];
+    var gaps = [];
+    var idleMs = 0;
+    for (var m = 0; m < segs.length; m++) {
+      var seg = segs[m];
+      if (seg.idle) {
+        idleMs += seg.end - seg.start;
+        gaps.push({ x0: x, w: IDLE_GAP_PX, dur: seg.end - seg.start });
+        x += IDLE_GAP_PX;
+      } else {
+        outBlocks.push({ start: seg.start, end: seg.end, x0: x });
+        x += (seg.end - seg.start) * scale;
+      }
+    }
+    return { blocks: outBlocks, gaps: gaps, scale: scale, totalWidth: x, idleMs: idleMs };
+  }
+
   function render() {
     var items = [];
     collect(viewRoot, null, items);
     var rowOf = assignRows(items);
     var viewStart = viewRoot.start;
-    var viewDur = Math.max(viewRoot.end - viewRoot.start, 1);
+    var viewEnd = viewRoot.end;
+    var viewDur = Math.max(viewEnd - viewStart, 1);
     var wrapWidth = Math.max(chartScroll.clientWidth, MIN_WIDTH_PX);
     var scale = wrapWidth / viewDur;
     var maxRow = 0;
@@ -303,11 +372,39 @@ const RENDERER_JS = `
 
     chart.innerHTML = "";
 
+    var layout = null;
+    if (collapseIdle) {
+      var activity = [];
+      for (var a = 0; a < items.length; a++) {
+        if (items[a].node !== viewRoot) activity.push(items[a]);
+      }
+      if (activity.length > 0) layout = buildCollapsedLayout(activity, viewStart, viewEnd, wrapWidth);
+    }
+
     for (var i = 0; i < items.length; i++) {
       var it = items[i];
       var n = it.node;
-      var left = (n.start - viewStart) * scale;
-      var width = Math.max((n.end - n.start) * scale, MIN_BAR_PX);
+      var left;
+      var width;
+      if (layout) {
+        if (n === viewRoot) {
+          left = 0;
+          width = layout.totalWidth;
+        } else {
+          var block = blockFor(n.start, layout.blocks);
+          if (block) {
+            left = block.x0 + (n.start - block.start) * layout.scale;
+            var right = block.x0 + (n.end - block.start) * layout.scale;
+            width = Math.max(right - left, MIN_BAR_PX);
+          } else {
+            left = 0;
+            width = MIN_BAR_PX;
+          }
+        }
+      } else {
+        left = (n.start - viewStart) * scale;
+        width = Math.max((n.end - n.start) * scale, MIN_BAR_PX);
+      }
       var row = rowOf[n.__id];
       if (row > maxRow) maxRow = row;
       if (left + width > maxRight) maxRight = left + width;
@@ -335,11 +432,32 @@ const RENDERER_JS = `
       chart.appendChild(bar);
     }
 
+    if (layout) {
+      var chartH = (maxRow + 1) * ROW_HEIGHT + 4;
+      for (var g = 0; g < layout.gaps.length; g++) {
+        var gap = layout.gaps[g];
+        var gapEl = document.createElement("div");
+        gapEl.className = "gap";
+        gapEl.style.left = gap.x0 + "px";
+        gapEl.style.top = "0px";
+        gapEl.style.width = gap.w + "px";
+        gapEl.style.height = chartH + "px";
+        gapEl.title = "idle " + fmtMs(gap.dur);
+        chart.appendChild(gapEl);
+      }
+    }
+
     chart.style.width = Math.max(wrapWidth, maxRight) + "px";
     chart.style.height = ((maxRow + 1) * ROW_HEIGHT + 4) + "px";
 
     renderBreadcrumb();
-    updateStats(items, maxRow, matches, viewDur);
+    updateStats(items, maxRow, matches, viewDur, layout ? layout.idleMs : undefined);
+  }
+
+  function updateCollapseBtn() {
+    collapseBtn.textContent = collapseIdle ? "Collapse idle: on" : "Collapse idle: off";
+    if (collapseIdle) collapseBtn.classList.add("on");
+    else collapseBtn.classList.remove("on");
   }
 
   searchInput.addEventListener("input", render);
@@ -348,9 +466,15 @@ const RENDERER_JS = `
     viewRoot = root;
     render();
   });
+  collapseBtn.addEventListener("click", function () {
+    collapseIdle = !collapseIdle;
+    updateCollapseBtn();
+    render();
+  });
 
   indexTree();
   renderLegend();
+  updateCollapseBtn();
   render();
 })();
 `;
@@ -401,6 +525,7 @@ export function renderFlameGraphHtml(data: FlameGraphData): string {
     padding: 6px 12px; border-radius: 6px; font-size: 12px; cursor: pointer;
   }
   .toolbar button:hover { background: #2f3440; }
+  .toolbar button.on { background: #3a4a66; border-color: #5a7bb8; color: #ffffff; }
   .legend {
     display: flex; flex-wrap: wrap; gap: 12px; padding: 8px 18px 2px;
     font-size: 12px; color: #9aa1b0;
@@ -422,9 +547,15 @@ export function renderFlameGraphHtml(data: FlameGraphData): string {
     position: absolute; border-radius: 3px; color: #0d0f13; font-size: 11px;
     line-height: 20px; padding: 0 5px; overflow: hidden; white-space: nowrap;
     text-overflow: ellipsis; cursor: pointer; border: 1px solid rgba(0,0,0,.35);
+    z-index: 1;
   }
   .bar.dim { opacity: 0.15; }
   .bar.hit { box-shadow: 0 0 0 2px #ffffff; z-index: 3; }
+  .gap {
+    position: absolute; z-index: 2; pointer-events: none;
+    background: repeating-linear-gradient(45deg, rgba(255,255,255,0.05) 0 4px, rgba(255,255,255,0) 4px 8px);
+    border-left: 1px dashed #3a4150; border-right: 1px dashed #3a4150;
+  }
   #tooltip {
     position: fixed; display: none; background: #0c0e13; border: 1px solid #3a4150;
     border-radius: 8px; padding: 10px 12px; font-size: 12px; max-width: 520px;
@@ -446,6 +577,7 @@ export function renderFlameGraphHtml(data: FlameGraphData): string {
 <div class="legend" id="legend"></div>
 <div class="toolbar">
   <input id="search" type="text" placeholder="Search spans…" autocomplete="off">
+  <button id="collapse">Collapse idle</button>
   <button id="reset">Reset zoom</button>
 </div>
 <div id="stats"></div>

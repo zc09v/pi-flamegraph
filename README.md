@@ -60,6 +60,7 @@ so timing data survives exit/reload and is restored for the same session.
 ## Reading the flame graph
 
 - **Width** = wall-clock duration (relative to the current zoom root).
+- **Collapse idle** = on by default; idle gaps between activity are compressed into thin striped markers so long-lived sessions stay readable. Toggle it to see true wall-clock spacing.
 - **Rows** = segments that overlap in time are pushed to separate rows.
 - **Colors** = segment category (see the legend in the HTML).
 - **Hover** = name, category, duration, self time (with % of total), % of parent, start/end times, token usage + cost, HTTP status, stop reason, tool args / result size / error flag, and a per-node children breakdown.
